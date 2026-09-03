@@ -322,17 +322,6 @@ def run_startup_sequence(recorder=None):
 # 4. INTELLECT ROUTING PIPELINE
 # ==========================================
 
-def process_command(clean_input, recorder_instance):
-    global LAST_EXECUTION_TIME
-
-    # --- HARD DEBOUNCE GUARD ---
-    # If a command was run less than 2 seconds ago, drop this duplicate execution entirely!
-    if time.time() - LAST_EXECUTION_TIME < 2.0:
-        print("[System] Ignored duplicate rapid trigger.")
-        return
-
-    # Update the timestamp immediately
-    LAST_EXECUTION_TIME = time.time()
 
 def execute_command(command_text, recorder_instance):
     global LAST_EXECUTION_TIME
