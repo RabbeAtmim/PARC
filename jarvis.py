@@ -6,11 +6,6 @@ import time
 import asyncio
 import edge_tts
 import subprocess
-import datetime
-import json
-import webbrowser
-import re
-import ollama
 import psutil
 from RealtimeSTT import AudioToTextRecorder
 import logging
@@ -18,13 +13,18 @@ import threading
 import traceback
 import cv2
 import numpy as np
+import datetime
+import json
+import webbrowser
+import re
+import ollama
 import math
-import pyautogui
 import urllib.request
 import random
 from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QHBoxLayout, QGraphicsDropShadowEffect, QScrollArea, QFrame
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF, QImage, QPixmap, QFont, QBrush
+import pyautogui
 
 try:
     import mediapipe as mp
