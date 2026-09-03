@@ -287,6 +287,7 @@ TOOL_REGISTRY = {
 
 def speak(text, recorder_instance=None):
     global IS_SPEAKING
+
     if not text: return
 
     IS_SPEAKING = True
@@ -339,6 +340,9 @@ def execute_command(command_text, recorder_instance):
     # WAKE-WORD CLEANING & ENFORCEMENT MATRIX
     wake_variants = ["park ", "parc ", "park, ", "parc, "]
     wake_word_detected = False
+    MAX_RETRY_ATTEMPTS = 3
+    REQUEST_TIMEOUT_SECONDS = 30
+
 
     # Edge Case: If you only say the name and nothing else
     if clean_input in ["parc", "park"]:
