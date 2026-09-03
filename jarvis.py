@@ -323,6 +323,11 @@ def run_startup_sequence(recorder=None):
 # 4. INTELLECT ROUTING PIPELINE
 # ==========================================
 
+def process_task(user_input: str) -> dict:
+    """
+    Processes incoming user requests and routes tasks through the agent workflow.
+    """
+
 
 def execute_command(command_text, recorder_instance):
     global LAST_EXECUTION_TIME

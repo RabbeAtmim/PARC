@@ -185,11 +185,6 @@ def ask_milo(user_query: str):
     # --- NEW INTERCEPT LOGIC ---
     clean_query = user_query.lower()
 
-    try:
-    # Your existing jarvis execution code here
-    pass
-except Exception as e:
-    print(f"[JARVIS Error] Task execution failed: {e}")
 
     if "dark joke" in clean_query or "dark humor" in clean_query:
         selected_joke = random.choice(DARK_JOKES)
@@ -215,6 +210,7 @@ except Exception as e:
     except Exception as e:
         speak_milo("I'm having trouble connecting to my local neural network.")
         print(f"[M.I.L.O LLM ERROR]: {e}")
+
 
 def handle_milo_intent(raw_text: str) -> bool:
     """Intercepts input containing 'milo' and handles it asynchronously."""
