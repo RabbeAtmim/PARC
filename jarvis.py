@@ -613,7 +613,7 @@ def execute_command(command_text, recorder_instance):
                 tool_executed = False
                 clean_speech = ""
 
-                # Background Execution Check: Extract valid JSON from raw content
+
                 json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
                 if json_match:
                     try:
@@ -696,7 +696,7 @@ class VisionEngine(QThread):
             pyautogui.FAILSAFE = False
             mouse_active = True
         except ImportError:
-            print("[SYSTEM WARNING] pyautogui not found. Run: pip install pyautogui")
+            print("[SYSTEM WARNING] pyautogui not found")
             mouse_active = False
 
         cap = None
@@ -717,7 +717,7 @@ class VisionEngine(QThread):
                     c.release()
 
         if cap is None or not cap.isOpened():
-            self.status_signal.emit("CAMERA ERROR // NO WEBCAM DETECTED")
+            self.status_signal.emit("CAMERA ERROR ")
             return
 
         detector = None
@@ -740,7 +740,7 @@ class VisionEngine(QThread):
                     min_tracking_confidence=0.5
                 )
                 detector = vision.HandLandmarker.create_from_options(options)
-                self.status_signal.emit("VISION ENGINE // MOTION TRACKING ACTIVED")
+                self.status_signal.emit(" MOTION TRACKING ACTIVED")
             except Exception as e:
                 self.status_signal.emit(f"MEDIAPIPE ERROR // {e}")
                 print(f"[MEDIAPIPE INIT ERROR] {e}")
@@ -802,7 +802,7 @@ class VisionEngine(QThread):
 
                                 # Draw a massive red indicator showing GRAB is locked
                                 cv2.circle(rgb_frame, knuckle_px, 12, (0, 0, 255), -1)
-                                cv2.putText(rgb_frame, "GRAB LOCKED", (knuckle_px[0]-40, knuckle_px[1]-20),
+                                cv2.putText(rgb_frame, "GRAB", (knuckle_px[0]-40, knuckle_px[1]-20),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
                                 if not self.is_grabbing:
@@ -1002,7 +1002,7 @@ class ParcHUD(QMainWindow):
         return px, py, scale, z2
 
     def update_command_display(self, text: str):
-        self.cmd_lbl.setText(f"PARC V1 > {text.upper()}")
+        self.cmd_lbl.setText(f"PARC V1.0 > {text.upper()}")
 
     def listen_loop(self):
         while True:
@@ -1359,7 +1359,7 @@ class ParcHUD(QMainWindow):
 # 7. UNIFIED DAEMON EXECUTION RUNWAY
 # =====================================================================
 if __name__ == "__main__":
-    print("\n=== PERSOANL ASSIST AND RESPONSE CORE ===")
+    print("\n=== PARC ===")
 
     try:
         # 1. Initialize Audio Recorder
