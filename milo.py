@@ -185,6 +185,12 @@ def ask_milo(user_query: str):
     # --- NEW INTERCEPT LOGIC ---
     clean_query = user_query.lower()
 
+    try:
+    # Your existing jarvis execution code here
+    pass
+except Exception as e:
+    print(f"[JARVIS Error] Task execution failed: {e}")
+
     if "dark joke" in clean_query or "dark humor" in clean_query:
         selected_joke = random.choice(DARK_JOKES)
         speak_milo(selected_joke)
