@@ -1,11 +1,24 @@
-# milo.py
 import os
 import sys
 import subprocess
-import ollama
 import threading
 import random
 import time
+
+try:
+    import ollama
+except ImportError:
+    print("[WARNING] Ollama module not found. Please install it in your .venv")
+
+global_recorder = None
+
+def set_recorder(recorder_instance):
+    """
+    Call this function from your main script to pass the active recorder to Milo.
+    Example in parc.py: milo.set_recorder(recorder)
+    """
+    global global_recorder
+    global_recorder = recorder_instance
 
 # Dynamically locate binaries inside the active virtual environment (.venv)
 VENV_BIN_DIR = os.path.dirname(sys.executable)
@@ -14,8 +27,8 @@ EDGE_TTS_BIN = os.path.join(VENV_BIN_DIR, "edge-tts")
 # Voice selection
 MILO_VOICE = "en-US-GuyNeural"
 
-# List of Pre-defined dark humor jokes
 DARK_JOKES = [
+
     "What does a burnt pizza and a pregnant woman have in common? Someone forgot to pull it out on time.",
     "Don't be racist. Racism is a crime. And crime is for black people.",
     "Any jokes can be funny with the right delivery. Except the abortion joke. They have no delivery.",
@@ -151,14 +164,14 @@ DARK_JOKES = [
     "What's the difference between Jesus and his photo? Photo requires only one nail to hang."
 ]
 
-
 def speak_milo(text: str):
-    """Generates and plays speech using the active .venv's edge-tts executable."""
+    global global_recorder
+
     print(f"[M.I.L.O]: {text}")
     try:
         output_file = "/tmp/milo_speech.mp3"
 
-        # 1. Generate audio using edge-tts binary from .venv (runs fine as root)
+        # 1. Generate audio
         subprocess.run(
             [EDGE_TTS_BIN, "--voice", MILO_VOICE, "--text", text, "--write-media", output_file],
             stdout=subprocess.DEVNULL,
@@ -166,7 +179,14 @@ def speak_milo(text: str):
             check=True
         )
 
-        # 2. Play audio output using ffplay forced through standard user 'atmim' to bypass root audio block
+        # --- 2. GO DEAF (Pause the microphone stream) ---
+        if global_recorder:
+            try:
+                global_recorder.stop()
+            except Exception:
+                pass
+
+        # 3. Play audio output
         subprocess.run(
             ["sudo", "-u", "atmim", "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", output_file],
             stdout=subprocess.DEVNULL,
@@ -174,32 +194,37 @@ def speak_milo(text: str):
             check=True
         )
 
-        # 3. Brief pause to let PulseAudio/ALSA release the sound card
-        time.sleep(0.2)
+        time.sleep(0.3)
 
     except Exception as e:
         print(f"[M.I.L.O TTS ERROR]: {e}")
 
+    finally:
+        # --- 4. WAKE UP (Resume the microphone stream) ---
+        if global_recorder:
+            try:
+                global_recorder.start()
+            except Exception:
+                pass
 
 CUSTOM_RESPONSES = {
     "who created you": "I was created by Atmim to serve as the core intelligence for PARC.",
     "what is your purpose": "My purpose is to provide local, zero-latency system automation and desktop control.",
-    "who is your master": "It's Sheikh Rabbe Atmim, my creator",
+    "who is your master": "It's Sheikh Rabbe Atmim, my creator.",
     "what is parc": "PARC stands for Personal Assist and Response Core, your hands-free desktop companion.",
     "what operating system do you run on": "I run natively on Linux.",
     "are you connected with cloud": "No, my core intelligence runs entirely offline and locally on your machine for privacy and speed.",
     "are you connected with internet": "No, my core intelligence runs entirely offline and locally on your machine for privacy and speed.",
-    "who is Atmim": "Atmim is my creator and the mastermind behind building me",
-    "confidence check": "Always above the sky",
-    "what does milo stand for": "Mindful Interactive Language Operator"
-
+    "who is atmim": "Atmim is my creator and the mastermind behind building me.",
+    "confidence check": "Always above the sky.",
+    "what does milo stand for": "Mindful Interactive Language Operator."
 }
 
 def ask_milo(user_query: str):
-
+    """Handles conversation routing using Hermes 3 via Ollama."""
     clean_query = user_query.lower().strip()
 
-    # --- 1. NEW CUSTOM Q&A INTERCEPT LOGIC ---
+    # --- 1. CUSTOM Q&A INTERCEPT LOGIC ---
     for trigger, exact_response in CUSTOM_RESPONSES.items():
         if trigger in clean_query:
             speak_milo(exact_response)
@@ -212,6 +237,14 @@ def ask_milo(user_query: str):
         return
     # ---------------------------
 
+    # --- 3. DYNAMIC WORD/TOKEN LIMIT LOGIC ---
+    elaboration_triggers = ["explain", "elaborate", "in detail", "detailed", "tell me more", "why", "how come"]
+
+    if any(trigger in clean_query for trigger in elaboration_triggers):
+        max_tokens = 250
+    else:
+        max_tokens = 50
+
     model_name = 'hermes3:3b'
 
     try:
@@ -220,10 +253,14 @@ def ask_milo(user_query: str):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a sharp, humorous, bold, conversational buddy, named MILO (Mindful Interctive Language Operator), an AI working alongside PARC (Personal Assist and Response Core). You explain concepts clearly, think out loud, and provide direct answers."
+                    "content": "You are a sharp, humorous, bold, conversational buddy, named MILO (Mindful Interactive Language Operator), an AI working alongside PARC (Personal Assist and Response Core). You explain concepts clearly, think out loud, and provide direct answers."
                 },
                 {"role": "user", "content": user_query}
-            ]
+            ],
+            options={
+                "temperature": 0.7,
+                "num_predict": max_tokens
+            }
         )
         answer = response['message']['content']
         speak_milo(answer)
@@ -234,7 +271,7 @@ def ask_milo(user_query: str):
 def handle_milo_intent(raw_text: str) -> bool:
     """Intercepts input containing 'milo' and handles it asynchronously."""
     clean_text = raw_text.lower().strip()
-    wake_words = ["milo", "my lo", "maiolo", "my lo", "mylow", "meelo"]
+    wake_words = ["milo", "my lo", "maiolo", "mylow", "meelo"]
 
     if any(wake in clean_text for wake in wake_words):
         print("[ROUTER] Routing to M.I.L.O module...")
@@ -247,11 +284,9 @@ def handle_milo_intent(raw_text: str) -> bool:
         if not query:
             query = "What can you do for me?"
 
-        # Run ask_MILO in a separate thread so it doesn't freeze PARC's loop
+        # Run ask_milo in a separate thread so it doesn't freeze PARC's loop
         milo_thread = threading.Thread(target=ask_milo, args=(query,), daemon=True)
         milo_thread.start()
         return True  # Command handled by MILO
 
     return False  # Command intended for PARC
-
-
