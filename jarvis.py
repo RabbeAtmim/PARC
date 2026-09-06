@@ -65,7 +65,6 @@ threading.excepthook = _log_thread_crash
 
 print(f"DEBUG: Running with: {sys.executable}")
 print(f"DEBUG: sys.path: {sys.path}")
-# Suppress standard subsystem clutter logs without hiding Python crashes
 logging.getLogger("RealtimeSTT").setLevel(logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
