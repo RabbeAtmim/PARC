@@ -1520,7 +1520,6 @@ async def process_phone_input(request: Request):
         clean_command = "parc " + clean_command
 
     try:
-        # This now triggers the ONE Hermes 3 brain at the top of your file
         threading.Thread(target=execute_command, args=(clean_command, global_recorder), daemon=True).start()
     except Exception as e:
         print(f"[Bridge Dispatch Error]: {e}")
