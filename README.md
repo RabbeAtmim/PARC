@@ -1,33 +1,33 @@
-# 🤖 Parc & Milo: The Ultimate AI Desktop Assistant
+#  Parc & Milo: The Ultimate AI Desktop Assistant
 
 Welcome to the **Parc & Milo** repository! This project combines a powerful, hands-free computer automation tool (Parc) with a witty, conversational AI companion (Milo). Together, they are designed to drastically reduce the human effort required to operate a PC while making the experience interactive and fun.
 
 ---
 
-## ✨ Features
+##  Features
 
-### 🛠️ Parc: The Operator
+###  Parc: The Operator
 Parc is your system's command center. It handles the heavy lifting of PC navigation and system control, all wrapped in a sleek, modern GUI. 
 
-* **🖐️ Hand Gesture Control:** Control your mouse cursor entirely hands-free using intuitive hand gestures.
-* **🪟 Advanced Window Management:** Instantly maximize, minimize, or split screens and tabs.
-* **⚙️ System Operations:** Open the File Manager, tweak system settings, and fetch real-time system status.
-* **🌐 Web & Media:** Launch websites and play music on command.
-* **🔊 Audio Control:** Increase/decrease volume or mute your system instantly.
-* **📝 Productivity:** Save quick notes without breaking your workflow.
-* **🔒 Security:** Lock down your PC remotely or via direct command.
-* **📱 Mobile Integration:** Control Parc's core functions directly from your mobile phone.
-* **🖥️ Cool GUI:** A highly interactive and visually appealing graphical user interface.
+* ** Hand Gesture Control:** Control your mouse cursor entirely hands-free using intuitive hand gestures.
+* ** Advanced Window Management:** Instantly maximize, minimize, or split screens and tabs.
+* ** System Operations:** Open the File Manager, tweak system settings, and fetch real-time system status.
+* ** Web & Media:** Launch websites and play music on command.
+* ** Audio Control:** Increase/decrease volume or mute your system instantly.
+* ** Productivity:** Save quick notes without breaking your workflow.
+* ** Security:** Lock down your PC remotely or via direct command.
+* ** Mobile Integration:** Control Parc's core functions directly from your mobile phone.
+* ** Cool GUI:** A highly interactive and visually appealing graphical user interface.
 
 ### 💬 Milo: The Companion
 Milo is the personality of the system. Whenever you need a break from work, Milo is there to keep things light.
 
-* **🗣️ Conversational AI:** Loves to chat and keep you company.
-* **🎭 Sense of Humor:** Always ready with a joke to brighten up your workflow.
+* ** Conversational AI:** Loves to chat and keep you company.
+* ** Sense of Humor:** Always ready with a joke to brighten up your workflow.
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 * **Python 3.x**
