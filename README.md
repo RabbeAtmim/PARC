@@ -19,7 +19,7 @@ Parc is your system's command center. It handles the heavy lifting of PC navigat
 * ** Mobile Integration:** Control Parc's core functions directly from your mobile phone.
 * ** Cool GUI:** A highly interactive and visually appealing graphical user interface.
 
-### 💬 Milo: The Companion
+###  Milo: The Companion
 Milo is the personality of the system. Whenever you need a break from work, Milo is there to keep things light.
 
 * ** Conversational AI:** Loves to chat and keep you company.
