@@ -419,7 +419,7 @@ def execute_command(command_text, recorder_instance):
                 wake_word_detected = True
                 break
 
-    # THE ENFORCEMENT GATE: If no wake word was spoken, kill execution immediately
+    
     if not wake_word_detected:
         return  
 
