@@ -4,8 +4,14 @@ import sys
 import platform
 import time
 import asyncio
+import tempfile
 import edge_tts
 import subprocess
+import datetime
+import json
+import webbrowser
+import re
+import ollama
 import psutil
 from RealtimeSTT import AudioToTextRecorder
 import logging
@@ -13,18 +19,16 @@ import threading
 import traceback
 import cv2
 import numpy as np
-import datetime
-import json
-import webbrowser
-import re
-import ollama
 import math
+import pyautogui
 import urllib.request
 import random
+from milo import handle_milo_intent
 from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QHBoxLayout, QGraphicsDropShadowEffect, QScrollArea, QFrame
-from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QMetaObject, Q_ARG
 from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF, QImage, QPixmap, QFont, QBrush
-import pyautogui
+from fastapi import FastAPI, Request
+import uvicorn
 
 try:
     import mediapipe as mp
@@ -66,7 +70,7 @@ logging.getLogger("RealtimeSTT").setLevel(logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 
-MODEL_NAME = "hermes3:3b"
+MODEL_NAME = "deepdml/faster-whisper-large-v3-turbo-ct2"
 
 # Global System State Variables
 LAST_EXECUTION_TIME = 0.0
@@ -241,22 +245,38 @@ def play_music_on_youtube(search_query: str = "music") -> str:
     except Exception as e:
         return f"[System Error] Media streaming pipeline disrupted: {e}"
 
-def get_system_telemetry() -> str:
-    """Extracts a complete operational vector detailing CPU temperature, memory usage, disk constraints, and active processes."""
+def get_cpu_temp() -> str:
+    """Reads CPU temperature cleanly."""
     try:
         temps = psutil.sensors_temperatures()
-        cpu_temp = "Restricted"
         if temps:
             for name, entries in temps.items():
                 if entries:
-                    cpu_temp = f"{entries[0].current}°C"
-                    break
-        mem = psutil.virtual_memory().percent
-        disk = psutil.disk_usage('/').percent
-        proc_count = len(psutil.pids())
-        return f"Core Temp: {cpu_temp} | Memory Load: {mem}% | Main Partition Space Used: {disk}% | Active PIDs: {proc_count} processes."
-    except Exception as e:
-        return f"Telemetry extraction fault: {e}"
+                    return f"{entries[0].current}°C"
+        return "N/A"
+    except Exception:
+        return "N/A"
+
+
+def get_gpu_temp() -> str:
+    """Reads GPU metrics cleanly via nvidia-smi."""
+    try:
+        cmd = "nvidia-smi --query-gpu=temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
+        output = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        parts = [p.strip() for p in output.splitlines()[0].split(',')]
+        return f"GPU Temp: {parts[0]}°C | GPU Load: {parts[1]}%"
+    except Exception:
+        return "GPU Temp: N/A"
+
+
+def get_system_telemetry() -> str:
+    """Full system overview call registered in TOOL_REGISTRY."""
+    cpu = get_cpu_temp()
+    gpu = get_gpu_temp()
+    mem = psutil.virtual_memory().percent
+    disk = psutil.disk_usage('/').percent
+    proc_count = len(psutil.pids())
+    return f"Core Temp: {cpu} | {gpu} | RAM: {mem}% | Disk: {disk}% | Active PIDs: {proc_count} processes |"
 
 def lock_system_workstation() -> str:
     """Locks the Linux terminal and display environment instantly."""
@@ -266,6 +286,25 @@ def lock_system_workstation() -> str:
 def terminate_assistant_core() -> str:
     """Powers down the system agent runtime loop."""
     return "[System Action] AI Core shutdown sequence executed."
+
+def save_system_note(note_content: str) -> str:
+    """
+    Saves a text note, idea, or reminder to the local PARC_Notes directory.
+    Use this whenever the user asks to 'take a note', 'remember this', or 'save this idea'.
+    """
+    try:
+        notes_dir = os.path.expanduser("~/Documents/PARC_Notes")
+        os.makedirs(notes_dir, exist_ok=True)
+        filename = f"note_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        filepath = os.path.join(notes_dir, filename)
+
+        with open(filepath, "w") as f:
+            f.write(f"--- PARC Core Capture ---\n\n{note_content}\n")
+
+        subprocess.Popen(["xdg-open", filepath], env=dict(os.environ, DISPLAY=":0"))
+        return "[System Success] Idea successfully documented and saved to databanks."
+    except Exception as e:
+        return f"[System Error] Failed to write note: {e}"
 
 
 TOOL_REGISTRY = {
@@ -278,7 +317,8 @@ TOOL_REGISTRY = {
     'play_music_on_youtube': play_music_on_youtube,
     'get_system_telemetry': get_system_telemetry,
     'lock_system_workstation': lock_system_workstation,
-    'terminate_assistant_core': terminate_assistant_core
+    'terminate_assistant_core': terminate_assistant_core,
+    'save_system_core': save_system_note
 }
 
 # ==========================================
@@ -287,7 +327,6 @@ TOOL_REGISTRY = {
 
 def speak(text, recorder_instance=None):
     global IS_SPEAKING
-
     if not text: return
 
     IS_SPEAKING = True
@@ -299,9 +338,27 @@ def speak(text, recorder_instance=None):
     output_file = "/tmp/parc_voice_buffer.mp3"
 
     try:
-        asyncio.run(edge_tts.Communicate(text, "en-US-AriaNeural").save(output_file))
-        subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", output_file],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 1. Use the reliable subprocess method (Avoids asyncio thread crashes completely!)
+        EDGE_TTS_BIN = os.path.join(os.path.dirname(sys.executable), "edge-tts")
+
+        subprocess.run(
+            [EDGE_TTS_BIN, "--voice", "en-US-AriaNeural", "--text", text, "--write-media", output_file],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+
+        # 2. Play audio output using ffplay
+        subprocess.run(
+            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", output_file],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+
+    except Exception as e:
+        print(f"[PARC TTS ERROR]: {e}")
+
     finally:
         if recorder_instance:
             time.sleep(0.2)
@@ -323,17 +380,23 @@ def run_startup_sequence(recorder=None):
 # 4. INTELLECT ROUTING PIPELINE
 # ==========================================
 
-def process_task(user_input: str) -> dict:
-    """
-    Processes incoming user requests and routes tasks through the agent workflow.
-    """
+def process_command(clean_input, recorder_instance):
+    global LAST_EXECUTION_TIME
 
+    # --- HARD DEBOUNCE GUARD ---
+    # If a command was run less than 2 seconds ago, drop this duplicate execution entirely!
+    if time.time() - LAST_EXECUTION_TIME < 2.0:
+        print("[System] Ignored duplicate rapid trigger.")
+        return
+
+    # Update the timestamp immediately
+    LAST_EXECUTION_TIME = time.time()
 
 def execute_command(command_text, recorder_instance):
     global LAST_EXECUTION_TIME
 
     # Cooldown and basic filter
-    if time.time() - LAST_EXECUTION_TIME < COOLDOWN_PERIOD or IS_SPEAKING:
+    if time.time() - LAST_EXECUTION_TIME < COOLDOWN_PERIOD:
         return
 
     # 1. AGGRESSIVE PUNCTUATION & WAKE-WORD STRIPPING
@@ -345,9 +408,6 @@ def execute_command(command_text, recorder_instance):
     # WAKE-WORD CLEANING & ENFORCEMENT MATRIX
     wake_variants = ["park ", "parc ", "park, ", "parc, "]
     wake_word_detected = False
-    MAX_RETRY_ATTEMPTS = 3
-    REQUEST_TIMEOUT_SECONDS = 30
-
 
     # Edge Case: If you only say the name and nothing else
     if clean_input in ["parc", "park"]:
@@ -401,22 +461,22 @@ def execute_command(command_text, recorder_instance):
         return
 
     # =====================================================================
-    # # DIRECT HARDWARE STATS INTERCEPTOR (BYPASS LLM & CIRCUITS)
+    # DIRECT HARDWARE STATS INTERCEPTOR (MUST BE AT THE VERY TOP)
     # =====================================================================
-    if any(x in clean_input for x in ["temperature", "cpu", "core temp", "ram", "memory", "pc stats", "disk", "partition"]):
+    if any(x in clean_input for x in ["temperature", "cpu", "gpu", "graphics", "nvidia", "core temp", "ram", "memory", "pc stats", "disk", "partition"]):
         print("[System Interceptor]: Isolating targeted hardware query.")
         try:
-            # 1. Fetch the complete telemetry string from your registry
             full_stats = str(TOOL_REGISTRY["get_system_telemetry"]())
             parts = [p.strip() for p in full_stats.split("|")]
 
-            # 2. Extract sections safely using simple searches
-            cpu_stat = next((p for p in parts if "temp" in p.lower() or "core" in p.lower()), "CPU metrics missing")
+            cpu_stat = next((p for p in parts if "core temp" in p.lower() or ("temp" in p.lower() and "gpu" not in p.lower())), "CPU metrics missing")
+            gpu_stat = next((p for p in parts if "gpu" in p.lower() or "vram" in p.lower()), "GPU metrics missing")
             ram_stat = next((p for p in parts if "memory" in p.lower() or "ram" in p.lower()), "RAM metrics missing")
             disk_stat = next((p for p in parts if "partition" in p.lower() or "space" in p.lower()), "Disk metrics missing")
 
-            # 3. Check what the user actually said and pick the matching piece
-            if "ram" in clean_input or "memory" in clean_input:
+            if "gpu" in clean_input or "graphics" in clean_input or "nvidia" in clean_input:
+                clean_speech = f"{gpu_stat}, Sir."
+            elif "ram" in clean_input or "memory" in clean_input:
                 clean_speech = f"{ram_stat}, Sir."
             elif "cpu" in clean_input or "temp" in clean_input or "temperature" in clean_input:
                 clean_speech = f"{cpu_stat}, Sir."
@@ -425,7 +485,6 @@ def execute_command(command_text, recorder_instance):
             else:
                 clean_speech = f"Full diagnostic details: {full_stats}"
 
-            # 4. Speak only the isolated answer
             speak(clean_speech, recorder_instance)
 
         except Exception as e:
@@ -433,8 +492,7 @@ def execute_command(command_text, recorder_instance):
             speak("Sensor array communication error, Sir.", recorder_instance)
 
         LAST_EXECUTION_TIME = time.time()
-        return
-
+        return  # STOP EXECUTION HERE so it never reaches the LLM / tool runner
 
     # 2. ELITE ABSOLUTE CIRCUIT BREAKER
     if clean_input.startswith(("open ", "launch ", "go to ", "play ", "minimize", "maximize", "split")):
@@ -547,7 +605,7 @@ def execute_command(command_text, recorder_instance):
 
     try:
         response = ollama.chat(
-            model="hermes3:3b",
+            model="functiongemma:latest",
             messages=messages,
             tools=list(TOOL_REGISTRY.values())
         )
@@ -611,7 +669,7 @@ def execute_command(command_text, recorder_instance):
                 tool_executed = False
                 clean_speech = ""
 
-
+                # Background Execution Check: Extract valid JSON from raw content
                 json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
                 if json_match:
                     try:
@@ -694,7 +752,7 @@ class VisionEngine(QThread):
             pyautogui.FAILSAFE = False
             mouse_active = True
         except ImportError:
-            print("[SYSTEM WARNING] pyautogui not found")
+            print("[SYSTEM WARNING] pyautogui not found. Run: pip install pyautogui")
             mouse_active = False
 
         cap = None
@@ -715,14 +773,23 @@ class VisionEngine(QThread):
                     c.release()
 
         if cap is None or not cap.isOpened():
-            self.status_signal.emit("CAMERA ERROR ")
+            self.status_signal.emit("CAMERA ERROR // NO WEBCAM DETECTED")
             return
 
         detector = None
         if 'HAS_MEDIAPIPE' in globals() and HAS_MEDIAPIPE:
             try:
-                model_path = "/tmp/hand_landmarker.task"
+                # Save to user cache instead of volatile /tmp
+                cache_dir = os.path.expanduser("~/.cache/parc_models")
+                os.makedirs(cache_dir, exist_ok=True)
+                model_path = os.path.join(cache_dir, "hand_landmarker.task")
+
+                # If file exists but is under 8MB, it's corrupted—remove it
+                if os.path.exists(model_path) and os.path.getsize(model_path) < 8_000_000:
+                    os.remove(model_path)
+
                 if not os.path.exists(model_path):
+                    print("[VISION ENGINE] Downloading MediaPipe hand landmark model...")
                     urllib.request.urlretrieve(
                         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
                         model_path
@@ -738,7 +805,7 @@ class VisionEngine(QThread):
                     min_tracking_confidence=0.5
                 )
                 detector = vision.HandLandmarker.create_from_options(options)
-                self.status_signal.emit(" MOTION TRACKING ACTIVED")
+                self.status_signal.emit("VISION ENGINE // MOTION TRACKING ACTIVATED")
             except Exception as e:
                 self.status_signal.emit(f"MEDIAPIPE ERROR // {e}")
                 print(f"[MEDIAPIPE INIT ERROR] {e}")
@@ -800,7 +867,7 @@ class VisionEngine(QThread):
 
                                 # Draw a massive red indicator showing GRAB is locked
                                 cv2.circle(rgb_frame, knuckle_px, 12, (0, 0, 255), -1)
-                                cv2.putText(rgb_frame, "GRAB", (knuckle_px[0]-40, knuckle_px[1]-20),
+                                cv2.putText(rgb_frame, "GRAB LOCKED", (knuckle_px[0]-40, knuckle_px[1]-20),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
                                 if not self.is_grabbing:
@@ -1000,7 +1067,7 @@ class ParcHUD(QMainWindow):
         return px, py, scale, z2
 
     def update_command_display(self, text: str):
-        self.cmd_lbl.setText(f"PARC V1.0 > {text.upper()}")
+        self.cmd_lbl.setText(f"PARC V1 > {text.upper()}")
 
     def listen_loop(self):
         while True:
@@ -1010,6 +1077,12 @@ class ParcHUD(QMainWindow):
                     if text:
                         self.mic_volume = 1.0
                         self.command_signal.emit(text)
+
+                        # Route to MILO first if "MILO" is mentioned
+                        if handle_milo_intent(text):
+                            continue  # Skip PARC command execution
+
+                        # Fallback to PARC tool execution
                         if "execute_command" in globals():
                             execute_command(text, self.recorder)
                 time.sleep(0.1)
@@ -1292,7 +1365,7 @@ class ParcHUD(QMainWindow):
 
         # Header Bar
         header = QHBoxLayout()
-        title = QLabel("P.A.R.C // VERSION 1.0")
+        title = QLabel("P.A.R.C // VERSION 1.3")
         title.setFont(QFont("Monospace", 14, QFont.Weight.Bold))
         title.setStyleSheet("color: #ff7300; border: none;")
         header.addWidget(title)
@@ -1354,47 +1427,151 @@ class ParcHUD(QMainWindow):
             self.vision_thread.start()
 
 # =====================================================================
-# 7. UNIFIED DAEMON EXECUTION RUNWAY
+# 7. UNIFIED DAEMON EXECUTION RUNWAY & PHONE BRIDGE
 # =====================================================================
-if __name__ == "__main__":
-    print("\n=== PARC ===")
+api_app = FastAPI()
+global_recorder = None
+
+# -------------------------------------------------------------------
+# THREAD-SAFE TTS ENGINE (Works for both PC and Phone)
+# -------------------------------------------------------------------
+def speak_text(text):
+    """Synthesizes speech safely without conflicting with FastAPI's async loops"""
+    if not text:
+        return
+
+    def _speak_worker():
+        path = None
+        try:
+            # 1. Create a temporary file
+            fd, path = tempfile.mkstemp(suffix=".mp3")
+            os.close(fd)
+
+            # 2. Synthesize audio via Edge TTS module (Bypasses asyncio conflicts)
+            subprocess.run(
+                [sys.executable, "-m", "edge_tts", "--voice", "en-US-AriaNeural", "--text", text, "--write-media", path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            # 3. Play audio using standard subprocess (Bulletproof for Linux/PipeWire)
+            env = os.environ.copy()
+            env["DISPLAY"] = ":0"
+
+            # Ensure PipeWire audio context is preserved even if triggered remotely
+            if "XDG_RUNTIME_DIR" not in env:
+                env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+
+            subprocess.run(
+                ["mpv", "--no-video", "--really-quiet", path],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        except subprocess.CalledProcessError:
+            print("\n[PARC TTS Error]: Edge-TTS failed to generate audio. Check internet connection.")
+        except FileNotFoundError:
+            print("\n[PARC TTS Error]: 'mpv' is not installed! Run 'sudo pacman -S mpv' in terminal.")
+        except Exception as e:
+            print(f"\n[PARC TTS Error]: {e}")
+        finally:
+            # 4. Clean up the temporary MP3 file
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+
+    # Fire and forget in a standard thread
+    threading.Thread(target=_speak_worker, daemon=True).start()
+
+# -------------------------------------------------------------------
+# FASTAPI PHONE BRIDGE (CRASH-PROOF MULTI-FORMAT HANDLER)
+# -------------------------------------------------------------------
+@api_app.post("/command")
+async def process_phone_input(request: Request):
+    global global_recorder
+    raw_command = ""
+
+    # Safely extract text whether it's JSON or Raw Text
+    try:
+        data = await request.json()
+        if isinstance(data, dict):
+            raw_command = data.get("command", "")
+        else:
+            raw_command = str(data)
+    except Exception:
+        try:
+            body_bytes = await request.body()
+            raw_command = body_bytes.decode("utf-8").strip()
+        except Exception as e:
+            print(f"[Bridge Body Parse Error]: {e}")
+            raw_command = ""
+
+    print(f"\n[Phone Bridge Received]: '{raw_command}'")
+
+    if not raw_command:
+        return {"status": "error", "response": "Empty command received."}
+
+    # Inject the wake word so Hermes knows it's an authorized command
+    # even if you just typed "open youtube" on your phone.
+    clean_command = raw_command.lower()
+    if not clean_command.startswith(("parc", "park")):
+        clean_command = "parc " + clean_command
 
     try:
-        # 1. Initialize Audio Recorder
+        # This now triggers the ONE Hermes 3 brain at the top of your file
+        threading.Thread(target=execute_command, args=(clean_command, global_recorder), daemon=True).start()
+    except Exception as e:
+        print(f"[Bridge Dispatch Error]: {e}")
+
+    return {"status": "success", "response": f"Routed to Core AI: {raw_command}"}
+
+def run_phone_server():
+    uvicorn.run(api_app, host="0.0.0.0", port=5050, log_level="error")
+
+# =====================================================================
+# SYSTEM IGNITION (MAIN EXECUTION BLOCK)
+# =====================================================================
+if __name__ == "__main__":
+    print("\n=== PERSONAL ASSIST AND RESPONSE CORE ===")
+
+    # 1. Start Phone Bridge in Background
+    threading.Thread(target=run_phone_server, daemon=True).start()
+    print("[PARC Core]: Phone bridge running in background on port 5050...")
+
+    # 2. Initialize Audio Recorder
+    try:
         recorder = AudioToTextRecorder(
             spinner=True,
-            model="base.en",
+            model="deepdml/faster-whisper-large-v3-turbo-ct2",
             device="cuda",
             use_microphone=True,
-            compute_type="float16",
+            compute_type="int8",
             input_device_index=11
         )
+        global_recorder = recorder
     except Exception:
-        print("\n[FATAL] AudioToTextRecorder failed to initialize — this usually means CUDA/GPU\n"
-              "isn't reachable the way RealtimeSTT expects (driver mismatch, wrong compute_type\n"
-              "for your card, or PyTorch not built with CUDA support), or input_device_index=11\n"
-              "doesn't match a real microphone on this machine. Full traceback below and in\n"
-              f"{CRASH_LOG_PATH}.\n")
-        with open(CRASH_LOG_PATH, "a") as f:
-            f.write(f"\n\n===== RECORDER INIT CRASH at {datetime.datetime.now()} =====\n")
-            traceback.print_exc(file=f)
+        print("\n[FATAL] AudioToTextRecorder failed to initialize.")
         traceback.print_exc()
         sys.exit(1)
 
-    wake_words = ["parc", "park"]
-
-    # 2. Run Startup Sequence
+    # 3. Startup Greeting (if your sequence exists)
     try:
-        run_startup_sequence(recorder)
+        if "run_startup_sequence" in globals():
+            run_startup_sequence(recorder)
     except Exception:
-        print("[Non-fatal] Startup greeting failed, continuing without it:")
-        traceback.print_exc()
+        pass
 
-    print("\n[Telemetry Status] Signal tracking arrays configured. Awaiting voice triggers, Sir...\n")
+    # 4. Launch PyQt6 Interface
+    qt_app = QApplication(sys.argv)
 
-    # 3. Launch Unified PyQt6 App & Kinetic HUD
-    app = QApplication(sys.argv)
-    hud = ParcHUD(recorder)
-    hud.show()
+    if "ParcHUD" in globals():
+        hud = ParcHUD(recorder)
+        hud.show()
+    else:
+        print("[Warning] HUD not found.")
 
-    sys.exit(app.exec())
+    sys.exit(qt_app.exec())

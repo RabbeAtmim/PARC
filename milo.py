@@ -151,6 +151,7 @@ DARK_JOKES = [
     "What's the difference between Jesus and his photo? Photo requires only one nail to hang."
 ]
 
+
 def speak_milo(text: str):
     """Generates and plays speech using the active .venv's edge-tts executable."""
     print(f"[M.I.L.O]: {text}")
@@ -179,17 +180,36 @@ def speak_milo(text: str):
     except Exception as e:
         print(f"[M.I.L.O TTS ERROR]: {e}")
 
+
+CUSTOM_RESPONSES = {
+    "who created you": "I was created by Atmim to serve as the core intelligence for PARC.",
+    "what is your purpose": "My purpose is to provide local, zero-latency system automation and desktop control.",
+    "who is your master": "It's Sheikh Rabbe Atmim, my creator",
+    "what is parc": "PARC stands for Personal Assist and Response Core, your hands-free desktop companion.",
+    "what operating system do you run on": "I run natively on Linux.",
+    "are you connected with cloud": "No, my core intelligence runs entirely offline and locally on your machine for privacy and speed.",
+    "are you connected with internet": "No, my core intelligence runs entirely offline and locally on your machine for privacy and speed.",
+    "who is Atmim": "Atmim is my creator and the mastermind behind building me",
+    "confidence check": "Always above the sky",
+    "what does milo stand for": "Mindful Interactive Language Operator"
+
+}
+
 def ask_milo(user_query: str):
-    """Handles conversation routing using Hermes 3 via Ollama."""
 
-    # --- NEW INTERCEPT LOGIC ---
-    clean_query = user_query.lower()
+    clean_query = user_query.lower().strip()
 
+    # --- 1. NEW CUSTOM Q&A INTERCEPT LOGIC ---
+    for trigger, exact_response in CUSTOM_RESPONSES.items():
+        if trigger in clean_query:
+            speak_milo(exact_response)
+            return
 
+    # --- 2. DARK JOKE INTERCEPT ---
     if "dark joke" in clean_query or "dark humor" in clean_query:
         selected_joke = random.choice(DARK_JOKES)
         speak_milo(selected_joke)
-        return  # This stops execution so Ollama is not called
+        return
     # ---------------------------
 
     model_name = 'hermes3:3b'
@@ -210,7 +230,6 @@ def ask_milo(user_query: str):
     except Exception as e:
         speak_milo("I'm having trouble connecting to my local neural network.")
         print(f"[M.I.L.O LLM ERROR]: {e}")
-
 
 def handle_milo_intent(raw_text: str) -> bool:
     """Intercepts input containing 'milo' and handles it asynchronously."""
@@ -234,12 +253,5 @@ def handle_milo_intent(raw_text: str) -> bool:
         return True  # Command handled by MILO
 
     return False  # Command intended for PARC
-
-def on_user_entered_room():
-    """Triggered by wifi_radar.py when human presence transitions from vacant to occupied."""
-    # Generate a brief 1-sentence welcome back message via Hermes 3
-    ask_milo(
-        "I just walked into the room. Give me a brief, sharp, 1-sentence welcome back greeting."
-    )
 
 
