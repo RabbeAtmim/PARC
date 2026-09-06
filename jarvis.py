@@ -71,7 +71,6 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 
 MODEL_NAME = "deepdml/faster-whisper-large-v3-turbo-ct2"
 
-# Global System State Variables
 LAST_EXECUTION_TIME = 0.0
 COOLDOWN_PERIOD = 3.0
 IS_SPEAKING = False
@@ -422,7 +421,7 @@ def execute_command(command_text, recorder_instance):
 
     # THE ENFORCEMENT GATE: If no wake word was spoken, kill execution immediately
     if not wake_word_detected:
-        return  # Drops out silently. Ollama and your custom tools will never trigger.
+        return  
 
     # Validate remaining command length (only if a command was actually given)
     if clean_input != "" and len(clean_input) < 3:
