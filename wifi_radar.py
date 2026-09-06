@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from scapy.all import Dot11, RadioTap, sniff
 
-# Try importing M.I.L.O presence handler
+
 try:
     from milo import on_user_entered_room
 
